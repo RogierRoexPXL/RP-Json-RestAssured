@@ -32,13 +32,13 @@ public class JsonTest {
     @Test
     public void shouldRespondStatusOkMoreThan95Percent() {
         // STEP 1: call API with testdata-set
-        Map<Integer, Integer> map = startTestApiCalls();
+        Map<Integer, Integer> results = startTestApiCalls();
 
         // STEP 2: report
-        printTestReport(map);
+        printTestReport(results);
 
         // STEP 3: assertions
-        assertThat(percentileOkResponses(map), is(greaterThan(95.0)));
+        assertThat(percentileOkResponses(results), is(greaterThan(95.0)));
     }
 
 
