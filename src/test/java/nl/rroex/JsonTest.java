@@ -36,11 +36,11 @@ public class JsonTest {
             int counter = 0;
             String line;
 
+            // STEP 1: call API with testdata-set
             while ((line = reader.readLine()) != null) {
                 line = removeCommaAfterJsonFile(counter, line);
                 counter++;
 
-                // POST request
                 int statusCode = given().contentType("application/json")
                         .body(line)
                         .post().getStatusCode();
@@ -55,9 +55,10 @@ public class JsonTest {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        // Report
+        // STEP 2: report
         printTestReport(map);
-        // Assert
+
+        // STEP 3: assertions
         assertThat(percentileOkResponses(map), is(greaterThan(95.0)));
     }
 
