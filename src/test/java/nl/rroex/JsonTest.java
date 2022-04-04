@@ -5,6 +5,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -30,13 +31,25 @@ public class JsonTest {
 
     @Test
     public void shouldRespondStatusOkMoreThan95Percent() {
+        // STEP 1: call API with testdata-set
+        Map<Integer, Integer> map = startTestApiCalls();
+
+        // STEP 2: report
+        printTestReport(map);
+
+        // STEP 3: assertions
+        assertThat(percentileOkResponses(map), is(greaterThan(95.0)));
+    }
+
+
+    //#region helper methods
+    private Map<Integer, Integer> startTestApiCalls() {
         Map<Integer, Integer> map = new HashMap<>();
 
         try (BufferedReader reader = Files.newBufferedReader(invoicesJson)) {
             int counter = 0;
             String line;
 
-            // STEP 1: call API with testdata-set
             while ((line = reader.readLine()) != null) {
                 line = removeCommaAfterJsonFile(counter, line);
                 counter++;
@@ -52,17 +65,12 @@ public class JsonTest {
                     map.put(statusCode, map.get(statusCode) + 1);
                 }
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
-        // STEP 2: report
-        printTestReport(map);
-
-        // STEP 3: assertions
-        assertThat(percentileOkResponses(map), is(greaterThan(95.0)));
+        return map;
     }
 
-    //#region helper methods
     private Double percentileOkResponses(Map<Integer, Integer> map) {
         int ok = 0, total = 0;
         for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
