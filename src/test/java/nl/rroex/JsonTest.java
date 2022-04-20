@@ -1,15 +1,20 @@
 package nl.rroex;
 
 import io.restassured.RestAssured;
-import org.junit.Before;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.junit.BeforeClass;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static io.restassured.RestAssured.*;
@@ -18,57 +23,125 @@ import static org.hamcrest.Matchers.*;
 
 public class JsonTest {
 
-    private static final String PARSER = "json-java";
-    private static final int DATA_AMOUNT = 1001;
-    private Path invoicesJson;
+    public static final String SOURCE_MOCK_JSON_DATA_SMALL = "src/test/resources/invoices/MockInvoicesSmall.json";
+    public static final String SOURCE_MOCK_JSON_DATA_MEDIUM = "src/test/resources/invoices/MockInvoicesMedium.json";
+    public static final String SOURCE_MOCK_JSON_DATA_LARGE = "src/test/resources/invoices/MockInvoicesLarge.json";
+    private static String PARSER;
+    private static String dataSource;
 
-    @Before
-    public void setUp() {
+    private static List<String> testData;
+
+    @BeforeClass
+    public static void setUp() {
+        PARSER = "fastJson";
+//        dataSource = SOURCE_MOCK_JSON_DATA_SMALL;
+//        dataSource = SOURCE_MOCK_JSON_DATA_MEDIUM;
+        dataSource = SOURCE_MOCK_JSON_DATA_LARGE;
         RestAssured.baseURI = "http://localhost:8080/invoice";
-//        RestAssured.port = 443;
-        invoicesJson = Paths.get("src/test/java/resources/MOCK_DATA.json");
+        testData = provideTestData();
     }
 
     @Test
-    public void shouldRespondStatusOkMoreThan95Percent() {
+    public void postShouldRespondOk_MoreThan95Percent() {
         // STEP 1: call API with testdata-set
-        Map<Integer, Integer> results = startTestApiCalls();
+        Map<Integer, Integer> results = startPostApiCalls();
 
         // STEP 2: report
-        printTestReport(results);
+        printTestReport(results, "POST");
 
         // STEP 3: assertions
         assertThat(percentileOkResponses(results), is(greaterThan(95.0)));
     }
 
+    @Test
+    public void getShouldReturnCorrectData_MoreThan95Percent() {
+        // STEP 1: call API with testdata-set
+        HashMap<String, Integer> fails = startGetApiCalls();
+
+        // STEP 2: report
+        printTestReport(fails, "GET");
+
+        // STEP 3: assertions
+        assertThat(fails.get("id"), is(lessThan( 50)));
+        assertThat(fails.get("totalAmount"), is(lessThan( 50)));
+        assertThat(fails.get("companyName"), is(lessThan( 50)));
+        assertThat(fails.get("comment"), is(lessThan( 50)));
+    }
+
 
     //#region helper methods
-    private Map<Integer, Integer> startTestApiCalls() {
-        Map<Integer, Integer> map = new HashMap<>();
-
-        try (BufferedReader reader = Files.newBufferedReader(invoicesJson)) {
-            int counter = 0;
+    private static List<String> provideTestData() {
+        testData = new ArrayList<>();
+        try (BufferedReader reader = Files.newBufferedReader(Path.of(dataSource))) {
             String line;
-
             while ((line = reader.readLine()) != null) {
-                line = removeCommaAfterJsonFile(counter, line);
-                counter++;
-
-                int statusCode = given().contentType("application/json")
-                        .body(line)
-                        .post().getStatusCode();
-
-                // update statuscode data
-                if (!map.containsKey(statusCode)) {
-                    map.put(statusCode, 1);
-                } else {
-                    map.put(statusCode, map.get(statusCode) + 1);
-                }
+                line = line.replace("},", "}");
+                testData.add(line);
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+        return testData;
+    }
+
+    private Map<Integer, Integer> startPostApiCalls() {
+        Map<Integer, Integer> map = new HashMap<>();
+        for (String line : testData) {
+            int statusCode = given().contentType("application/json")
+                    .when()
+                    .body(line)
+                    .post().getStatusCode();
+
+            // update statuscode data
+            if (!map.containsKey(statusCode)) {
+                map.put(statusCode, 1);
+            } else {
+                map.put(statusCode, map.get(statusCode) + 1);
+            }
+        }
         return map;
+    }
+
+    private HashMap<String, Integer> startGetApiCalls() {
+        HashMap<String, Integer> fails = new HashMap<>() {{
+            put("id", 0);
+            put("totalAmount", 0);
+            put("companyName", 0);
+            put("comment", 0);
+        }};
+        for (int i = 0; i < testData.size(); i++) {
+            int id = i + 1;
+            String line = testData.get(i);
+            Object[] values = getValues(line);
+
+            String body = given().contentType("application/json")
+                    .get("/" + id)
+                    .body().asString();
+
+            JSONObject jsonObject = new JSONObject(body);
+            if (id != jsonObject.getInt("id")) {
+                fails.put("id", fails.get("id") + 1);
+            }
+            if (0 != jsonObject.getBigDecimal("totalAmount").compareTo((BigDecimal) values[0])) {
+                fails.put("totalAmount", fails.get("totalAmount") + 1);
+            }
+            if (!jsonObject.getString("companyName").equals(values[1])) {
+                fails.put("companyName", fails.get("companyName") + 1);
+            }
+            if (!jsonObject.getString("comment").equals(values[2])) {
+                fails.put("comment", fails.get("comment") + 1);
+            }
+        }
+        return fails;
+    }
+
+    private Object[] getValues(String line) throws JSONException {
+        JSONObject jsonObject = new JSONObject(line);
+        return new Object[]{
+                jsonObject.getBigDecimal("totalAmount"),
+                jsonObject.get("companyName"),
+                jsonObject.get("comment")
+        };
     }
 
     private Double percentileOkResponses(Map<Integer, Integer> map) {
@@ -82,23 +155,17 @@ public class JsonTest {
         return (double) ok / total * 100;
     }
 
-    private String removeCommaAfterJsonFile(int amount, String line) {
-        if (amount != DATA_AMOUNT - 1) {
-            line = line.substring(0, line.length() - 1);
-        }
-        return line;
-    }
+    private void printTestReport(Map<?, ?> map, String caller) {
+        System.out.println("Parser: " + PARSER);
+        System.out.println("Request: " + caller);
+        System.out.println("Datasource: " + dataSource);
+        System.out.println("######################");
 
-    private void printTestReport(Map<Integer, Integer> map) {
-        String title = "####### " + PARSER + " #######";
-        System.out.println(title);
-        System.out.println("Status codes report:");
-
-        for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
             System.out.println(entry.getKey() + " => " + entry.getValue());
         }
 
-        System.out.println("#".repeat(title.length()));
+        System.out.println("######################");
     }
     //#endregion
 }
