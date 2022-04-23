@@ -176,8 +176,8 @@ public class JsonTest {
     }
 
     private void printTestReport(Map<?, ?> map, int iteration) {
-        System.out.println("Iteration: " + iteration);
         System.out.println("######################");
+        System.out.println("**Iteration: " + iteration + "**");
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             System.out.println(entry.getKey() + " => " + entry.getValue());
         }
