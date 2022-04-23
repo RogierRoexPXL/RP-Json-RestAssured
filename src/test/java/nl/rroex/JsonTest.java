@@ -1,11 +1,18 @@
 package nl.rroex;
 
 import io.restassured.RestAssured;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.BeforeClass;
 import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.jupiter.api.ClassOrderer;
+import org.junit.jupiter.api.ClassOrderer.OrderAnnotation;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.runners.MethodSorters;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -21,58 +28,60 @@ import static io.restassured.RestAssured.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class JsonTest {
-
-    public static final String SOURCE_MOCK_JSON_DATA_SMALL = "src/test/resources/invoices/MockInvoicesSmall.json";
-    public static final String SOURCE_MOCK_JSON_DATA_MEDIUM = "src/test/resources/invoices/MockInvoicesMedium.json";
-    public static final String SOURCE_MOCK_JSON_DATA_LARGE = "src/test/resources/invoices/MockInvoicesLarge.json";
+    public static final String MOCK_DATA = "src/test/resources/invoices/MockInvoicesArrays.json";
     private static String PARSER;
-    private static String dataSource;
+    private static int CYCLES;
 
     private static List<String> testData;
 
     @BeforeClass
     public static void setUp() {
-        PARSER = "fastJson";
-//        dataSource = SOURCE_MOCK_JSON_DATA_SMALL;
-//        dataSource = SOURCE_MOCK_JSON_DATA_MEDIUM;
-        dataSource = SOURCE_MOCK_JSON_DATA_LARGE;
+        PARSER = "Gson";
+        CYCLES = 10;
         RestAssured.baseURI = "http://localhost:8080/invoice";
         testData = provideTestData();
     }
 
     @Test
-    public void postShouldRespondOk_MoreThan95Percent() {
-        // STEP 1: call API with testdata-set
-        Map<Integer, Integer> results = startPostApiCalls();
+    public void testA_postShouldRespondOk_MoreThan50Percent() {
+        System.out.println("Parser: " + PARSER);
+        for (int i = 0; i < CYCLES; i++) {
+            // STEP 1: call API with testdata-set
+            Map<Integer, Integer> results = startPostApiCalls();
 
-        // STEP 2: report
-        printTestReport(results, "POST");
+            // STEP 2: report
+            printTestReport(results, i + 1);
 
-        // STEP 3: assertions
-        assertThat(percentileOkResponses(results), is(greaterThan(95.0)));
+            // STEP 3: assertions
+            assertThat(percentileOkResponses(results), is(greaterThan(50.0)));
+        }
     }
 
     @Test
-    public void getShouldReturnCorrectData_MoreThan95Percent() {
-        // STEP 1: call API with testdata-set
-        HashMap<String, Integer> fails = startGetApiCalls();
+    public void testB_getShouldReturnCorrectData_MoreThan50Percent() {
+        System.out.println("Parser: " + PARSER);
+        for (int i = 0; i < CYCLES; i++) {
+            // STEP 1: call API with testdata-set
+            HashMap<String, Integer> results = startGetApiCalls(i);
 
-        // STEP 2: report
-        printTestReport(fails, "GET");
+            // STEP 2: report
+            printTestReport(results, i + 1);
 
-        // STEP 3: assertions
-        assertThat(fails.get("id"), is(lessThan( 50)));
-        assertThat(fails.get("totalAmount"), is(lessThan( 50)));
-        assertThat(fails.get("companyName"), is(lessThan( 50)));
-        assertThat(fails.get("comment"), is(lessThan( 50)));
+            // STEP 3: assertions
+            assertThat(results.get("id"), is(lessThan(1000)));
+            assertThat(results.get("totalAmount"), is(lessThan(1000)));
+            assertThat(results.get("companyName"), is(lessThan(1000)));
+            assertThat(results.get("comment"), is(lessThan(1000)));
+        }
     }
 
 
     //#region helper methods
     private static List<String> provideTestData() {
         testData = new ArrayList<>();
-        try (BufferedReader reader = Files.newBufferedReader(Path.of(dataSource))) {
+        try (BufferedReader reader = Files.newBufferedReader(Path.of(MOCK_DATA))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.replace("},", "}");
@@ -102,33 +111,44 @@ public class JsonTest {
         return map;
     }
 
-    private HashMap<String, Integer> startGetApiCalls() {
+    private HashMap<String, Integer> startGetApiCalls(int iteration) {
         HashMap<String, Integer> fails = new HashMap<>() {{
             put("id", 0);
             put("totalAmount", 0);
             put("companyName", 0);
             put("comment", 0);
         }};
-        for (int i = 0; i < testData.size(); i++) {
-            int id = i + 1;
-            String line = testData.get(i);
-            Object[] values = getValues(line);
+        int startIndex = 1 + (iteration * testData.size());
 
+        for (int i = 0; i < testData.size(); i++) {
+            int id = startIndex + i;
+            System.out.println(id);
+            //test data (LOCAL)
+            String line = testData.get(i);
+            Object[] testObject = getValues(line);
+            JSONArray testArray = (JSONArray) testObject[2];
+            //json data (from server)
             String body = given().contentType("application/json")
                     .get("/" + id)
                     .body().asString();
-
             JSONObject jsonObject = new JSONObject(body);
+            JSONArray jsonArray = jsonObject.getJSONArray("comment");
+
+            boolean commentDataIsCorrect = true;
+            for(int j = 0; j < testArray.length(); j++){
+                commentDataIsCorrect = testArray.get(j).equals(jsonArray.get(j));
+            }
+
             if (id != jsonObject.getInt("id")) {
                 fails.put("id", fails.get("id") + 1);
             }
-            if (0 != jsonObject.getBigDecimal("totalAmount").compareTo((BigDecimal) values[0])) {
+            if (0 != jsonObject.getBigDecimal("totalAmount").compareTo((BigDecimal) testObject[0])) {
                 fails.put("totalAmount", fails.get("totalAmount") + 1);
             }
-            if (!jsonObject.getString("companyName").equals(values[1])) {
+            if (!jsonObject.getString("companyName").equals(testObject[1])) {
                 fails.put("companyName", fails.get("companyName") + 1);
             }
-            if (!jsonObject.getString("comment").equals(values[2])) {
+            if (!commentDataIsCorrect) {
                 fails.put("comment", fails.get("comment") + 1);
             }
         }
@@ -140,7 +160,7 @@ public class JsonTest {
         return new Object[]{
                 jsonObject.getBigDecimal("totalAmount"),
                 jsonObject.get("companyName"),
-                jsonObject.get("comment")
+                jsonObject.getJSONArray("comment")
         };
     }
 
@@ -155,12 +175,9 @@ public class JsonTest {
         return (double) ok / total * 100;
     }
 
-    private void printTestReport(Map<?, ?> map, String caller) {
-        System.out.println("Parser: " + PARSER);
-        System.out.println("Request: " + caller);
-        System.out.println("Datasource: " + dataSource);
+    private void printTestReport(Map<?, ?> map, int iteration) {
+        System.out.println("Iteration: " + iteration);
         System.out.println("######################");
-
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             System.out.println(entry.getKey() + " => " + entry.getValue());
         }
