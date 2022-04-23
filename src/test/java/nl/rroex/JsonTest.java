@@ -122,7 +122,6 @@ public class JsonTest {
 
         for (int i = 0; i < testData.size(); i++) {
             int id = startIndex + i;
-            System.out.println(id);
             //test data (LOCAL)
             String line = testData.get(i);
             Object[] testObject = getValues(line);
