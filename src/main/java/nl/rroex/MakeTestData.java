@@ -16,7 +16,7 @@ import java.util.Random;
 
 public class MakeTestData {
     private final static Random random = new Random();
-    private final static long AMOUNT_OF_LINES = 2000;
+    private final static long AMOUNT_OF_LINES = 10000;
     private final static String DESTINATION_FILE = "./src/test/resources/invoices/MockInvoicesArrays.json";
 
     public static void main(String[] args) {

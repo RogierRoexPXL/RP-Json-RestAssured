@@ -1,17 +1,14 @@
 package nl.rroex;
 
 import io.restassured.RestAssured;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.BeforeClass;
 import org.junit.FixMethodOrder;
 import org.junit.Test;
-import org.junit.jupiter.api.ClassOrderer;
-import org.junit.jupiter.api.ClassOrderer.OrderAnnotation;
-import org.junit.jupiter.api.MethodOrderer;
-import org.junit.jupiter.api.Order;
-import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.runners.MethodSorters;
 
 import java.io.BufferedReader;
@@ -30,7 +27,8 @@ import static org.hamcrest.Matchers.*;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class JsonTest {
-    public static final String MOCK_DATA = "src/test/resources/invoices/MockInvoicesArrays.json";
+    private static final Logger LOGGER = LogManager.getLogger(JsonTest.class);
+    private static final String MOCK_DATA = "src/test/resources/invoices/MockInvoicesArrays.json";
     private static String PARSER;
     private static int CYCLES;
 
@@ -38,14 +36,14 @@ public class JsonTest {
 
     @BeforeClass
     public static void setUp() {
-        PARSER = "Gson";
-        CYCLES = 10;
+        CYCLES = 1;
+        PARSER = "java json";
         RestAssured.baseURI = "http://localhost:8080/invoice";
         testData = provideTestData();
     }
 
     @Test
-    public void testA_postShouldRespondOk_MoreThan50Percent() {
+    public void testA_POST_ShouldRespondOk_MoreThan95Percent() {
         System.out.println("Parser: " + PARSER);
         for (int i = 0; i < CYCLES; i++) {
             // STEP 1: call API with testdata-set
@@ -55,13 +53,14 @@ public class JsonTest {
             printTestReport(results, i + 1);
 
             // STEP 3: assertions
-            assertThat(percentileOkResponses(results), is(greaterThan(50.0)));
+            assertThat(percentileOkResponses(results), is(greaterThan(95.0)));
         }
     }
 
     @Test
-    public void testB_getShouldReturnCorrectData_MoreThan50Percent() {
+    public void testB_GET_ShouldReturnCorrectData_MoreThan95Percent() {
         System.out.println("Parser: " + PARSER);
+        int fiftyPercent = (int) (testData.size() * 0.95);
         for (int i = 0; i < CYCLES; i++) {
             // STEP 1: call API with testdata-set
             HashMap<String, Integer> results = startGetApiCalls(i);
@@ -70,10 +69,10 @@ public class JsonTest {
             printTestReport(results, i + 1);
 
             // STEP 3: assertions
-            assertThat(results.get("id"), is(lessThan(1000)));
-            assertThat(results.get("totalAmount"), is(lessThan(1000)));
-            assertThat(results.get("companyName"), is(lessThan(1000)));
-            assertThat(results.get("comment"), is(lessThan(1000)));
+            assertThat(results.get("id"), is(lessThan(fiftyPercent)));
+            assertThat(results.get("totalAmount"), is(lessThan(fiftyPercent)));
+            assertThat(results.get("companyName"), is(lessThan(fiftyPercent)));
+            assertThat(results.get("comment"), is(lessThan(fiftyPercent)));
         }
     }
 
@@ -95,12 +94,12 @@ public class JsonTest {
 
     private Map<Integer, Integer> startPostApiCalls() {
         Map<Integer, Integer> map = new HashMap<>();
-        for (String line : testData) {
+        for (int i = 0; i < testData.size(); i++) {
             int statusCode = given().contentType("application/json")
                     .when()
-                    .body(line)
+                    .body(testData.get(i))
                     .post().getStatusCode();
-
+            LOGGER.info("POST "+ (i + 1) + ": statuscode " + statusCode);
             // update statuscode data
             if (!map.containsKey(statusCode)) {
                 map.put(statusCode, 1);
@@ -124,7 +123,7 @@ public class JsonTest {
             int id = startIndex + i;
             //test data (LOCAL)
             String line = testData.get(i);
-            Object[] testObject = getValues(line);
+            Object[] testObject = getTestLineValues(line);
             JSONArray testArray = (JSONArray) testObject[2];
             //json data (from server)
             String body = given().contentType("application/json")
@@ -134,9 +133,10 @@ public class JsonTest {
             JSONArray jsonArray = jsonObject.getJSONArray("comment");
 
             boolean commentDataIsCorrect = true;
-            for(int j = 0; j < testArray.length(); j++){
+            for (int j = 0; j < testArray.length(); j++) {
                 commentDataIsCorrect = testArray.get(j).equals(jsonArray.get(j));
             }
+            LOGGER.info("GET " + id + ": isDataCorrect returns " + commentDataIsCorrect);
 
             if (id != jsonObject.getInt("id")) {
                 fails.put("id", fails.get("id") + 1);
@@ -154,7 +154,7 @@ public class JsonTest {
         return fails;
     }
 
-    private Object[] getValues(String line) throws JSONException {
+    private Object[] getTestLineValues(String line) throws JSONException {
         JSONObject jsonObject = new JSONObject(line);
         return new Object[]{
                 jsonObject.getBigDecimal("totalAmount"),
@@ -180,7 +180,6 @@ public class JsonTest {
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             System.out.println(entry.getKey() + " => " + entry.getValue());
         }
-
         System.out.println("######################");
     }
     //#endregion
